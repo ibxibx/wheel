@@ -495,6 +495,27 @@ copyBtn.addEventListener('click', () => {
   });
 });
 
+// ── BROADCAST CHANNEL (same-browser, zero-latency tab sync) ──────────────
+// When two windows are open on the same laptop (e.g. one mirrored to the
+// projector), every Firebase write is also broadcast locally so the other
+// window updates instantly — without waiting for the Firebase round-trip.
+//
+// Message shape: { type: 'queue'|'wheel', data: [...] }
+// The receiving window calls the same render functions used by Firebase,
+// so behaviour is identical regardless of which path triggered the update.
+const bc = new BroadcastChannel('spinwheel');
+
+bc.onmessage = ({ data: msg }) => {
+  if (msg.type === 'queue') renderQueue(msg.data);
+  if (msg.type === 'wheel') syncWheel(msg.data);
+};
+
+// Call after every local write so peer windows update immediately.
+// Firebase onValue will also fire shortly after and produce the same result
+// (syncWheel's ID-set comparison makes that a no-op).
+function bcPostQueue(queue) { bc.postMessage({ type: 'queue', data: queue }); }
+function bcPostWheel(wheel) { bc.postMessage({ type: 'wheel', data: wheel }); }
+
 // ── FIREBASE REALTIME SUBSCRIPTIONS ──────────────────────────────────────
 // onValue fires immediately with current data (handles cross-device load),
 // then again on every subsequent write — no polling, no refresh needed.
@@ -541,15 +562,27 @@ queueList.addEventListener('click', async e => {
   if (approveBtn) {
     const id = approveBtn.dataset.id;
     approveBtn.disabled = true;
-    // Read name, write to wheel, remove from queue
     const snap = await fbGet(fbRef(db, `queue/${id}`));
     if (snap.exists()) {
       await fbPush(fbRef(db, 'wheel'), { name: snap.val().name, ts: Date.now() });
       await fbRemove(fbRef(db, `queue/${id}`));
+      // BroadcastChannel: peer windows see the queue shrink instantly
+      const qSnap = await fbGet(fbRef(db, 'queue'));
+      const qRaw  = qSnap.exists() ? qSnap.val() : {};
+      const queue = Object.entries(qRaw).map(([i,v])=>({id:i,name:v.name,ts:v.ts||0})).sort((a,b)=>a.ts-b.ts);
+      bcPostQueue(queue);
+      const wSnap = await fbGet(fbRef(db, 'wheel'));
+      const wRaw  = wSnap.exists() ? wSnap.val() : {};
+      const wheel = Object.entries(wRaw).map(([i,v])=>({id:i,name:v.name,ts:v.ts||0})).sort((a,b)=>a.ts-b.ts);
+      bcPostWheel(wheel);
     }
   }
   if (dismissBtn) {
     await fbRemove(fbRef(db, `queue/${dismissBtn.dataset.id}`));
+    const qSnap = await fbGet(fbRef(db, 'queue'));
+    const qRaw  = qSnap.exists() ? qSnap.val() : {};
+    const queue = Object.entries(qRaw).map(([i,v])=>({id:i,name:v.name,ts:v.ts||0})).sort((a,b)=>a.ts-b.ts);
+    bcPostQueue(queue);
   }
 });
 
@@ -599,12 +632,20 @@ function renderWheelList() {
 
 nameList.addEventListener('click', async e => {
   const d = e.target.closest('.btn-del');
-  if (d && fbReady) await fbRemove(fbRef(db, `wheel/${d.dataset.id}`));
+  if (d && fbReady) {
+    await fbRemove(fbRef(db, `wheel/${d.dataset.id}`));
+    const wSnap = await fbGet(fbRef(db, 'wheel'));
+    const wRaw  = wSnap.exists() ? wSnap.val() : {};
+    bcPostWheel(Object.entries(wRaw).map(([i,v])=>({id:i,name:v.name,ts:v.ts||0})).sort((a,b)=>a.ts-b.ts));
+  }
 });
 
 clearBtn.addEventListener('click', async () => {
   if (!confirm('Remove all names from the wheel?')) return;
-  if (fbReady) await fbRemove(fbRef(db, 'wheel'));
+  if (fbReady) {
+    await fbRemove(fbRef(db, 'wheel'));
+    bcPostWheel([]);
+  }
 });
 
 // ── MANUAL ADD (presenter adds directly to wheel, bypasses queue) ─────────
@@ -624,6 +665,10 @@ async function manualAdd() {
 
   await fbPush(fbRef(db, 'wheel'), { name, ts: Date.now() });
   nameInput.value = '';
+  // Broadcast so other windows on this machine update without a Firebase round-trip
+  const wSnap = await fbGet(fbRef(db, 'wheel'));
+  const wRaw  = wSnap.exists() ? wSnap.val() : {};
+  bcPostWheel(Object.entries(wRaw).map(([i,v])=>({id:i,name:v.name,ts:v.ts||0})).sort((a,b)=>a.ts-b.ts));
 }
 addBtn.addEventListener('click', manualAdd);
 nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') manualAdd(); });
@@ -753,7 +798,12 @@ function hideWinner() {
 winnerClose.addEventListener('click', hideWinner);
 winnerRemove.addEventListener('click', async () => {
   const entry = wheelNames[winnerIndex];
-  if (entry && fbReady) await fbRemove(fbRef(db, `wheel/${entry.id}`));
+  if (entry && fbReady) {
+    await fbRemove(fbRef(db, `wheel/${entry.id}`));
+    const wSnap = await fbGet(fbRef(db, 'wheel'));
+    const wRaw  = wSnap.exists() ? wSnap.val() : {};
+    bcPostWheel(Object.entries(wRaw).map(([i,v])=>({id:i,name:v.name,ts:v.ts||0})).sort((a,b)=>a.ts-b.ts));
+  }
   currentAngle = 0;
   hideWinner();
 });
