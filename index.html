@@ -618,11 +618,16 @@ function drawWheel(angle = 0) {
     ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, r, s, e2); ctx.closePath();
     ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = 1.5; ctx.stroke();
     ctx.save(); ctx.translate(cx, cy); ctx.rotate(s + arc / 2);
-    const tr = names.length <= 2 ? r * .5 : r * .62;
-    ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
-    ctx.font = `600 ${Math.max(9, Math.min(15, 180/names.length))}px Outfit,sans-serif`;
+    // Centre text at the midpoint of the radius with equal padding on both sides
+    const tr = r * 0.5;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = `700 ${Math.max(9, Math.min(15, 180/names.length))}px Outfit,sans-serif`;
     const label = name.length > 14 ? name.slice(0, 13) + '\u2026' : name;
-    ctx.fillStyle = 'rgba(0,0,0,.75)'; ctx.fillText(label, tr, 1.5);
+    // Black contour for contrast against any segment colour
+    ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+    ctx.lineWidth = 3;
+    ctx.lineJoin = 'round';
+    ctx.strokeText(label, tr, 0);
     ctx.fillStyle = '#fff'; ctx.fillText(label, tr, 0);
     ctx.restore();
   });
