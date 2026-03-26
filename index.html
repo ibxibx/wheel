@@ -269,8 +269,19 @@
   </div>
 </div>
 
-<script>
-// ── COLOURS ──────────────────────────────────────────────────────────────
+<script type="module">
+// ── FIREBASE CONFIG ───────────────────────────────────────────────────────
+const FIREBASE_CONFIG = {
+  apiKey:            "AIzaSyB5LE5DyEiJdWTURf1P-MaU_ACFF_djF_4",
+  authDomain:        "wheel-db5e9.firebaseapp.com",
+  databaseURL:       "https://wheel-db5e9-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId:         "wheel-db5e9",
+  storageBucket:     "wheel-db5e9.firebasestorage.app",
+  messagingSenderId: "824688985151",
+  appId:             "1:824688985151:web:75e50071b46950a6bca48a"
+};
+
+// ── COLOURS ───────────────────────────────────────────────────────────────
 const COLORS = ['#ff3cac','#00ffcc','#ffe600','#7b5ea7','#ff6b35','#00b4ff','#a8ff3e','#ff6bff','#ff9f43','#54a0ff','#5f27cd','#01abc3'];
 
 // ── STATE ─────────────────────────────────────────────────────────────────
@@ -303,8 +314,42 @@ const winnerNameText= document.getElementById('winnerNameText');
 const winnerClose   = document.getElementById('winnerClose');
 const winnerRemove  = document.getElementById('winnerRemove');
 
+// ── FIREBASE INIT (with offline fallback) ────────────────────────────────
+let db = null;
+let fbReady = false;
+let fbRef, fbGet, fbPush, fbRemove, fbOnValue, fbOff;
+
+async function initFirebase() {
+  try {
+    const { initializeApp } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js');
+    const mod = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js');
+    const app = initializeApp(FIREBASE_CONFIG);
+    db        = mod.getDatabase(app);
+    fbRef     = mod.ref;
+    fbGet     = mod.get;
+    fbPush    = mod.push;
+    fbRemove  = mod.remove;
+    fbOnValue = mod.onValue;
+    fbOff     = mod.off;
+    fbReady   = true;
+    connDot.classList.add('live');
+    subscribeToFirebase();
+  } catch (err) {
+    console.warn('Firebase unavailable, running offline:', err.message);
+    connDot.style.background = 'var(--accent2)';
+    joinUrlEl.textContent = 'Firebase offline — manual add only';
+    renderWheelList();
+    drawWheel();
+  }
+}
+
 // ── JOIN LINK ─────────────────────────────────────────────────────────────
-const joinUrl = `${location.protocol}//${location.hostname}:${location.port}/join`;
+// When running via the Node server, construct the LAN URL.
+// When opened directly as a file, show the Firebase join page URL.
+const isServed = location.protocol !== 'file:' && location.hostname !== '';
+const joinUrl  = isServed
+  ? `${location.protocol}//${location.hostname}:${location.port}/join`
+  : `https://wheel-db5e9.firebaseapp.com/join`;  // fallback if opened as a file
 joinUrlEl.textContent = joinUrl;
 copyBtn.addEventListener('click', () => {
   navigator.clipboard.writeText(joinUrl).then(() => {
@@ -314,18 +359,26 @@ copyBtn.addEventListener('click', () => {
   });
 });
 
-// ── SSE — live state from server ──────────────────────────────────────────
-function connectSSE() {
-  const es = new EventSource('/events');
-  es.onopen    = () => connDot.classList.add('live');
-  es.onerror   = () => { connDot.classList.remove('live'); setTimeout(connectSSE, 3000); es.close(); };
-  es.onmessage = e => {
-    const { queue, wheel } = JSON.parse(e.data);
+// ── FIREBASE REALTIME SUBSCRIPTIONS ──────────────────────────────────────
+function subscribeToFirebase() {
+  // Queue listener
+  fbOnValue(fbRef(db, 'queue'), snap => {
+    const raw = snap.exists() ? snap.val() : {};
+    const queue = Object.entries(raw)
+      .map(([id, v]) => ({ id, name: v.name, ts: v.ts || 0 }))
+      .sort((a, b) => a.ts - b.ts);
     renderQueue(queue);
-    syncWheel(wheel);
-  };
+  });
+
+  // Wheel listener
+  fbOnValue(fbRef(db, 'wheel'), snap => {
+    const raw = snap.exists() ? snap.val() : {};
+    const next = Object.entries(raw)
+      .map(([id, v]) => ({ id, name: v.name, ts: v.ts || 0 }))
+      .sort((a, b) => a.ts - b.ts);
+    syncWheel(next);
+  });
 }
-connectSSE();
 
 // ── QUEUE RENDERING ───────────────────────────────────────────────────────
 function renderQueue(queue) {
@@ -347,12 +400,20 @@ function renderQueue(queue) {
 queueList.addEventListener('click', async e => {
   const approveBtn = e.target.closest('.btn-approve');
   const dismissBtn = e.target.closest('.btn-dismiss');
+  if (!fbReady) return;
+
   if (approveBtn) {
+    const id = approveBtn.dataset.id;
     approveBtn.disabled = true;
-    await fetch(`/api/approve/${approveBtn.dataset.id}`, { method: 'POST' });
+    // Read name, write to wheel, remove from queue
+    const snap = await fbGet(fbRef(db, `queue/${id}`));
+    if (snap.exists()) {
+      await fbPush(fbRef(db, 'wheel'), { name: snap.val().name, ts: Date.now() });
+      await fbRemove(fbRef(db, `queue/${id}`));
+    }
   }
   if (dismissBtn) {
-    await fetch(`/api/queue/${dismissBtn.dataset.id}`, { method: 'DELETE' });
+    await fbRemove(fbRef(db, `queue/${dismissBtn.dataset.id}`));
   }
 });
 
@@ -400,28 +461,31 @@ function renderWheelList() {
 
 nameList.addEventListener('click', async e => {
   const d = e.target.closest('.btn-del');
-  if (d) await fetch(`/api/wheel/${d.dataset.id}`, { method: 'DELETE' });
+  if (d && fbReady) await fbRemove(fbRef(db, `wheel/${d.dataset.id}`));
 });
 
 clearBtn.addEventListener('click', async () => {
   if (!confirm('Remove all names from the wheel?')) return;
-  await Promise.all(wheelNames.map(e => fetch(`/api/wheel/${e.id}`, { method: 'DELETE' })));
+  if (fbReady) await fbRemove(fbRef(db, 'wheel'));
 });
 
 // ── MANUAL ADD (presenter adds directly to wheel, bypasses queue) ─────────
 async function manualAdd() {
   const name = nameInput.value.trim();
   if (!name) return;
-  const res  = await fetch('/api/wheel-add', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name }),
-  });
-  const data = await res.json();
-  if (data.ok) {
-    nameInput.value = '';
-  } else {
-    alert(data.error);
-  }
+  if (!fbReady) { alert('Firebase not connected.'); return; }
+
+  // Dedup check
+  const nameLower = name.toLowerCase();
+  const [qSnap, wSnap] = await Promise.all([
+    fbGet(fbRef(db, 'queue')),
+    fbGet(fbRef(db, 'wheel')),
+  ]);
+  const taken = snap => snap.exists() && Object.values(snap.val()).some(e => e.name?.toLowerCase() === nameLower);
+  if (taken(qSnap) || taken(wSnap)) { alert('That name is already on the wheel or in the queue.'); return; }
+
+  await fbPush(fbRef(db, 'wheel'), { name, ts: Date.now() });
+  nameInput.value = '';
 }
 addBtn.addEventListener('click', manualAdd);
 nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') manualAdd(); });
@@ -551,7 +615,7 @@ function hideWinner() {
 winnerClose.addEventListener('click', hideWinner);
 winnerRemove.addEventListener('click', async () => {
   const entry = wheelNames[winnerIndex];
-  if (entry) await fetch(`/api/wheel/${entry.id}`, { method: 'DELETE' });
+  if (entry && fbReady) await fbRemove(fbRef(db, `wheel/${entry.id}`));
   currentAngle = 0;
   hideWinner();
 });
@@ -573,6 +637,7 @@ function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>
 // ── INIT ──────────────────────────────────────────────────────────────────
 renderWheelList();
 drawWheel();
+initFirebase();
 </script>
 </body>
 </html>
