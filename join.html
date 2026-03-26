@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Join the Wheel</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Outfit:wght@300;400;600&display=swap');
+
+  :root {
+    --bg:     #0a0a0f;
+    --panel:  #10101a;
+    --border: #1e1e30;
+    --text:   #e8e8f0;
+    --muted:  #5a5a80;
+    --accent: #00ffcc;
+    --accent2:#ff3cac;
+    --glow:   0 0 20px rgba(0,255,204,.35);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Outfit', sans-serif;
+  }
+
+  /* scanlines */
+  body::before {
+    content:''; position:fixed; inset:0; pointer-events:none; z-index:99;
+    background: repeating-linear-gradient(
+      to bottom, transparent 0, transparent 2px,
+      rgba(0,0,0,.07) 2px, rgba(0,0,0,.07) 4px
+    );
+  }
+
+  .screen {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 32px 24px;
+    gap: 0;
+  }
+
+  .logo {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 2.8rem;
+    letter-spacing: .14em;
+    color: var(--accent);
+    text-shadow: var(--glow);
+    line-height: 1;
+    margin-bottom: 6px;
+  }
+  .logo span { color: var(--accent2); }
+
+  .tagline {
+    font-size: .75rem;
+    color: var(--muted);
+    letter-spacing: .2em;
+    text-transform: uppercase;
+    margin-bottom: 40px;
+  }
+
+  .card {
+    width: 100%;
+    max-width: 380px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 32px 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  label {
+    font-size: .75rem;
+    letter-spacing: .2em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  input[type=text] {
+    width: 100%;
+    background: rgba(255,255,255,.05);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+    color: var(--text);
+    font-family: 'Outfit', sans-serif;
+    font-size: 1.15rem;
+    outline: none;
+    transition: border-color .2s, box-shadow .2s;
+    -webkit-appearance: none;
+  }
+  input[type=text]:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(0,255,204,.12);
+  }
+  input[type=text]::placeholder { color: var(--muted); }
+
+  .join-btn {
+    width: 100%;
+    padding: 18px;
+    background: linear-gradient(135deg, var(--accent2), #c82896);
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 1.5rem;
+    letter-spacing: .16em;
+    cursor: pointer;
+    box-shadow: 0 0 24px rgba(255,60,172,.3), 0 4px 20px rgba(0,0,0,.4);
+    transition: transform .12s, box-shadow .12s, opacity .12s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .join-btn:active { transform: scale(.96); opacity: .85; }
+  .join-btn:disabled { opacity: .35; cursor: not-allowed; transform: none; }
+
+  /* Status messages */
+  .status {
+    min-height: 24px;
+    font-size: .85rem;
+    text-align: center;
+    transition: opacity .2s;
+  }
+  .status.error   { color: var(--accent2); }
+  .status.success { color: var(--accent); }
+  .status.hidden  { opacity: 0; }
+
+  /* Success state */
+  .success-screen {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    text-align: center;
+  }
+  .success-screen.show { display: flex; }
+  .form-area.hide { display: none; }
+
+  .checkmark {
+    font-size: 4rem;
+    animation: pop .4s cubic-bezier(.34,1.56,.64,1);
+  }
+  @keyframes pop { from{transform:scale(0)} to{transform:scale(1)} }
+
+  .success-name {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 2.4rem;
+    color: var(--accent);
+    text-shadow: var(--glow);
+    letter-spacing: .1em;
+  }
+
+  .success-msg {
+    color: var(--muted);
+    font-size: .9rem;
+    max-width: 280px;
+    line-height: 1.5;
+  }
+</style>
+</head>
+<body>
+<div class="screen">
+  <div class="logo">SPIN<span>&</span>WIN</div>
+  <div class="tagline">globalAI Berlin</div>
+
+  <div class="card">
+    <div class="form-area" id="formArea">
+      <label for="nameField">Your name</label>
+      <input type="text" id="nameField" placeholder="e.g. Alex" maxlength="40" autocomplete="off" autocorrect="off" spellcheck="false">
+      <button class="join-btn" id="joinBtn">JOIN THE WHEEL</button>
+      <div class="status hidden" id="status"></div>
+    </div>
+
+    <div class="success-screen" id="successScreen">
+      <div class="checkmark">🎯</div>
+      <div class="success-name" id="successName"></div>
+      <div class="success-msg">You're in the queue! The presenter will add you to the wheel shortly. Good luck 🍀</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const nameField    = document.getElementById('nameField');
+const joinBtn      = document.getElementById('joinBtn');
+const statusEl     = document.getElementById('status');
+const formArea     = document.getElementById('formArea');
+const successScreen= document.getElementById('successScreen');
+const successName  = document.getElementById('successName');
+
+function setStatus(msg, type) {
+  statusEl.textContent = msg;
+  statusEl.className   = `status ${type}`;
+}
+
+function clearStatus() {
+  statusEl.className = 'status hidden';
+}
+
+joinBtn.addEventListener('click', async () => {
+  const name = nameField.value.trim();
+  if (!name) { setStatus('Please enter your name.', 'error'); return; }
+
+  joinBtn.disabled = true;
+  clearStatus();
+
+  try {
+    const res  = await fetch('/api/join', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ name }),
+    });
+    const data = await res.json();
+
+    if (data.ok) {
+      successName.textContent = name;
+      formArea.classList.add('hide');
+      successScreen.classList.add('show');
+    } else {
+      setStatus(data.error || 'Something went wrong.', 'error');
+      joinBtn.disabled = false;
+    }
+  } catch {
+    setStatus('Could not reach the server. Are you on the same network?', 'error');
+    joinBtn.disabled = false;
+  }
+});
+
+nameField.addEventListener('keydown', e => { if (e.key === 'Enter') joinBtn.click(); });
+nameField.addEventListener('input',   clearStatus);
+nameField.focus();
+</script>
+</body>
+</html>
