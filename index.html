@@ -251,7 +251,7 @@
 const COLORS = ['#ff3cac','#00ffcc','#ffe600','#7b5ea7','#ff6b35','#00b4ff','#a8ff3e','#ff6bff','#ff9f43','#54a0ff','#5f27cd','#01abc3'];
 
 // ─── STATE ────────────────────────────────────────────────────────────
-let names = [], spinning = false, currentAngle = 0, winnerIndex = -1;
+let names = [], spinning = false, currentAngle = 0, winnerIndex = -1, tickCount = 0;
 
 // ─── DOM ──────────────────────────────────────────────────────────────
 const canvas        = document.getElementById('wheel');
@@ -397,17 +397,14 @@ function spinEase(t) {
   }
 }
 
-// Track which segment boundary the pointer last crossed
-let lastSegIndex = -1;
-
 function spin() {
   if (spinning || names.length === 0) return;
   spinning = true; spinBtn.disabled = true;
   canvas.classList.add('spinning');
-  lastSegIndex = -1;
-
-  winnerIndex = Math.floor(Math.random() * names.length);
-  const arc = (2 * Math.PI) / names.length;
+  const arc        = (2 * Math.PI) / names.length;
+  // Initialise tickCount to current angle so first frame doesn't fire a phantom tick
+  tickCount = Math.floor(currentAngle / arc);
+  winnerIndex      = Math.floor(Math.random() * names.length);
   const extraSpins = 6 + Math.floor(Math.random() * 5); // 6–10 full rotations
   // Place winner segment centre exactly at pointer (angle 0 = right)
   const segCenter = winnerIndex * arc + arc / 2;
@@ -424,19 +421,15 @@ function spin() {
     currentAngle = startAngle + totalAngle * eased;
 
     // ── Tick detection ────────────────────────────────────────────────
-    // Normalise angle so we can find which segment boundary just passed
-    const normAngle = ((currentAngle % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
-    // The pointer sits at angle 0; segment i occupies [i*arc, (i+1)*arc]
-    // Find which segment contains normAngle (going backwards, since wheel spins positively)
-    const pointerAngle = ((2 * Math.PI) - normAngle + 2 * Math.PI) % (2 * Math.PI);
-    const segIdx = Math.floor(pointerAngle / arc) % names.length;
-
-    if (segIdx !== lastSegIndex) {
-      lastSegIndex = segIdx;
-      // Instantaneous angular speed (radians/ms), map to 0–1
-      const speed = Math.min(1, Math.abs(totalAngle * (spinEase(rawT) - spinEase(Math.max(0, rawT - 0.002))) / (0.002 * duration)) / 0.012);
+    // totalAngle grows monotonically, so dividing by arc gives a counter
+    // that increments by exactly 1 each time the pointer crosses a slot boundary,
+    // regardless of frame rate. No modulo wrapping — strictly monotonic.
+    const newTickCount = Math.floor((startAngle + totalAngle * eased) / arc);
+    if (newTickCount > tickCount) {
+      tickCount = newTickCount;
+      const dt    = 0.002;
+      const speed = Math.min(1, Math.abs(totalAngle * (spinEase(rawT) - spinEase(Math.max(0, rawT - dt))) / (dt * duration)) / 0.012);
       playTick(speed);
-      // Pointer visual kick
       pointer.classList.add('tick');
       setTimeout(() => pointer.classList.remove('tick'), 60);
     }
