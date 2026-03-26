@@ -360,8 +360,9 @@ copyBtn.addEventListener('click', () => {
 });
 
 // ── FIREBASE REALTIME SUBSCRIPTIONS ──────────────────────────────────────
+// onValue fires immediately with current data (handles cross-device load),
+// then again on every subsequent write — no polling, no refresh needed.
 function subscribeToFirebase() {
-  // Queue listener
   fbOnValue(fbRef(db, 'queue'), snap => {
     const raw = snap.exists() ? snap.val() : {};
     const queue = Object.entries(raw)
@@ -370,7 +371,6 @@ function subscribeToFirebase() {
     renderQueue(queue);
   });
 
-  // Wheel listener
   fbOnValue(fbRef(db, 'wheel'), snap => {
     const raw = snap.exists() ? snap.val() : {};
     const next = Object.entries(raw)
@@ -418,21 +418,23 @@ queueList.addEventListener('click', async e => {
 });
 
 // ── WHEEL SYNC ────────────────────────────────────────────────────────────
-// Server is the source of truth for the wheel list.
-// We only re-render (and reset angle) if the set of names actually changed.
-function syncWheel(serverWheel) {
+// Firebase is source of truth. Re-render whenever the set of IDs changes.
+// Never reset currentAngle mid-spin; only reset when wheel goes from
+// non-empty → empty (i.e. cleared) so the next spin starts fresh.
+function syncWheel(next) {
   const prevIds = wheelNames.map(e => e.id).sort().join(',');
-  const nextIds = serverWheel.map(e => e.id).sort().join(',');
-  if (prevIds === nextIds) return;   // nothing changed
-  wheelNames = serverWheel;
-  if (!spinning) {
-    currentAngle = 0;
-    renderWheelList();
-    drawWheel(currentAngle);
-  } else {
-    // Update list display but don't reset angle mid-spin
-    renderWheelList();
-  }
+  const nextIds = next.map(e => e.id).sort().join(',');
+  if (prevIds === nextIds) return;  // nothing changed, skip
+
+  const wasEmpty = wheelNames.length === 0;
+  const nowEmpty = next.length === 0;
+  wheelNames = next;
+
+  // Only snap the angle back if the wheel just became empty
+  if (nowEmpty && !wasEmpty) currentAngle = 0;
+
+  renderWheelList();
+  if (!spinning) drawWheel(currentAngle);
 }
 
 function renderWheelList() {

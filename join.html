@@ -84,28 +84,24 @@ const offlineBanner = document.getElementById('offlineBanner');
 function setStatus(msg, type) { statusEl.textContent = msg; statusEl.className = `status ${type}`; }
 function clearStatus()        { statusEl.className = 'status hidden'; }
 
-// ── FIREBASE INIT (with offline fallback) ────────────────────────────────
-let db = null;
-let firebaseReady = false;
+// ── FIREBASE ──────────────────────────────────────────────────────────────
+let db = null, fbRef, fbGet, fbPush, fbOnValue;
+let fbReady = false;
+let myQueueKey = null;   // key of this user's entry, for watching removal
 
 async function initFirebase() {
   try {
-    const { initializeApp }        = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js');
-    const { getDatabase, ref, get, push, query, orderByChild, equalTo }
-                                   = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js');
+    const { initializeApp } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js');
+    const mod = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js');
     const app = initializeApp(FIREBASE_CONFIG);
-    db = getDatabase(app);
-    firebaseReady = true;
-
-    // Expose helpers on db object for use in joinHandler
-    db._ref   = ref;
-    db._get   = get;
-    db._push  = push;
-    db._query = query;
-    db._orderByChild = orderByChild;
-    db._equalTo      = equalTo;
+    db        = mod.getDatabase(app);
+    fbRef     = mod.ref;
+    fbGet     = mod.get;
+    fbPush    = mod.push;
+    fbOnValue = mod.onValue;
+    fbReady   = true;
   } catch (err) {
-    console.warn('Firebase unavailable, running offline:', err.message);
+    console.warn('Firebase unavailable:', err.message);
     offlineBanner.classList.add('show');
   }
 }
@@ -118,8 +114,8 @@ async function handleJoin() {
   joinBtn.disabled = true;
   clearStatus();
 
-  if (!firebaseReady) {
-    // Offline: just show success (name won't reach presenter)
+  if (!fbReady) {
+    // Offline: show success locally (won't sync)
     successName.textContent = name;
     formArea.classList.add('hide');
     successScreen.classList.add('show');
@@ -127,37 +123,54 @@ async function handleJoin() {
   }
 
   try {
-    const { _ref, _get, _push, _query, _orderByChild, _equalTo } = db;
-
-    // Dedup check: scan queue + wheel for this name (case-insensitive)
+    // Dedup: check both queue and wheel (case-insensitive)
     const nameLower = name.toLowerCase();
-    const [queueSnap, wheelSnap] = await Promise.all([
-      _get(_ref(db, 'queue')),
-      _get(_ref(db, 'wheel')),
+    const [qSnap, wSnap] = await Promise.all([
+      fbGet(fbRef(db, 'queue')),
+      fbGet(fbRef(db, 'wheel')),
     ]);
+    const inSnap = snap => snap.exists() &&
+      Object.values(snap.val()).some(e => e.name?.toLowerCase() === nameLower);
 
-    const taken = (snap) => {
-      if (!snap.exists()) return false;
-      return Object.values(snap.val()).some(e => e.name?.toLowerCase() === nameLower);
-    };
-
-    if (taken(queueSnap) || taken(wheelSnap)) {
-      setStatus('That name is already on the wheel or in the queue.', 'error');
+    if (inSnap(qSnap) || inSnap(wSnap)) {
+      setStatus('That name is already in the queue or on the wheel.', 'error');
       joinBtn.disabled = false;
       return;
     }
 
-    // Write to queue
-    await _push(_ref(db, 'queue'), { name, ts: Date.now() });
+    // Push to queue — save the key so we can watch for presenter approval
+    const newRef = await fbPush(fbRef(db, 'queue'), { name, ts: Date.now() });
+    myQueueKey = newRef.key;
 
+    // Show success immediately — don't wait for presenter
     successName.textContent = name;
     formArea.classList.add('hide');
     successScreen.classList.add('show');
+
+    // Watch our queue entry: when it disappears the presenter approved us
+    watchApproval(myQueueKey);
+
   } catch (err) {
     console.error(err);
     setStatus('Could not reach Firebase. Check your connection.', 'error');
     joinBtn.disabled = false;
   }
+}
+
+// ── APPROVAL WATCH ────────────────────────────────────────────────────────
+// The presenter approves by moving queue/KEY → wheel/ and deleting queue/KEY.
+// We watch queue/KEY: when it's null, we've been added to the wheel.
+function watchApproval(key) {
+  let firstCall = true;
+  fbOnValue(fbRef(db, `queue/${key}`), snap => {
+    if (firstCall) { firstCall = false; return; } // skip initial read
+    if (!snap.exists()) {
+      // Entry was removed from queue — presenter approved (or dismissed)
+      // Update the success message to reflect we're on the wheel
+      const msgEl = successScreen.querySelector('.success-msg');
+      if (msgEl) msgEl.textContent = "You're on the wheel! Good luck 🎡";
+    }
+  });
 }
 
 joinBtn.addEventListener('click', handleJoin);
