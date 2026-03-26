@@ -140,7 +140,21 @@
     transition: background .3s;
   }
   .conn-dot.live { background: var(--accent); box-shadow: 0 0 8px rgba(0,255,204,.6); }
+
+  /* ── QR CODE ── */
+  .qr-wrap {
+    display: flex;
+    justify-content: center;
+    padding: 10px 0 2px;
+  }
+  .qr-wrap canvas, .qr-wrap img {
+    border-radius: 8px;
+    border: 3px solid rgba(0,255,204,.25);
+    box-shadow: 0 0 16px rgba(0,255,204,.1);
+    display: block;
+  }
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 
   /* ── MAIN STAGE ── */
   main { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; position:relative; gap:28px; padding:24px; }
@@ -185,6 +199,105 @@
   .btn-winner-remove:active { transform:scale(.96); }
   .confetti-particle { position:fixed; pointer-events:none; z-index:300; animation:fall linear forwards; border-radius:2px; }
   @keyframes fall { 0%{transform:translateY(-20px) rotate(0deg);opacity:1} 100%{transform:translateY(100vh) rotate(720deg);opacity:0} }
+
+  /* ── PRESENTATION MODE ── */
+  /* Triggered by body.present — hides sidebar, fills screen with wheel */
+  body.present aside { display: none; }
+
+  body.present main {
+    gap: 0;
+    padding: 0;
+  }
+
+  /* Wheel grows to fill the viewport in present mode */
+  body.present .wheel-wrap::before {
+    width: calc(var(--present-size, 400px) + 80px);
+    height: calc(var(--present-size, 400px) + 80px);
+  }
+
+  body.present .spin-btn {
+    position: absolute;
+    bottom: 48px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 2.2rem;
+    padding: 18px 72px;
+  }
+  body.present .spin-btn:hover:not(:disabled) {
+    transform: translateX(-50%) translateY(-2px);
+  }
+  body.present .spin-btn:active:not(:disabled) {
+    transform: translateX(-50%) scale(.97);
+  }
+
+  body.present .no-names-hint { display: none; }
+  body.present .stage-title { display: none; }
+
+  /* Keyboard shortcut hint badge — always visible, fades in present mode */
+  .kbd-hint {
+    position: fixed;
+    top: 16px;
+    right: 20px;
+    z-index: 400;
+    font-family: 'DM Mono', monospace;
+    font-size: .6rem;
+    letter-spacing: .12em;
+    color: var(--muted);
+    background: rgba(255,255,255,.04);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 5px 10px;
+    pointer-events: none;
+    opacity: .5;
+    transition: opacity .3s;
+  }
+  body.present .kbd-hint { opacity: .25; }
+
+  /* ── QR OVERLAY ── */
+  .qr-overlay {
+    position: fixed;
+    bottom: 32px;
+    right: 32px;
+    z-index: 400;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    opacity: 0;
+    transform: translateY(12px) scale(.94);
+    pointer-events: none;
+    transition: opacity .35s ease, transform .35s cubic-bezier(.34,1.56,.64,1);
+  }
+  body.present .qr-overlay {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    pointer-events: all;
+  }
+
+  .qr-frame {
+    background: #fff;
+    border-radius: 12px;
+    padding: 12px;
+    box-shadow: 0 0 40px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.08);
+  }
+
+  .qr-label {
+    font-family: 'DM Mono', monospace;
+    font-size: .6rem;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+    color: var(--muted);
+    text-align: center;
+  }
+  .qr-url {
+    font-family: 'DM Mono', monospace;
+    font-size: .6rem;
+    color: var(--accent);
+    text-align: center;
+    word-break: break-all;
+    max-width: 170px;
+    line-height: 1.4;
+  }
 </style>
 </head>
 <body>
@@ -201,7 +314,8 @@
       <div class="conn-dot" id="connDot"></div>
       join link
     </div>
-    <div class="join-url" id="joinUrl">Starting server…</div>
+    <div class="join-url" id="joinUrl"></div>
+    <div class="qr-wrap"><div id="qrCode"></div></div>
     <button class="btn-copy" id="copyBtn">Copy link</button>
   </div>
 
@@ -267,6 +381,18 @@
     <button class="btn-winner-close" id="winnerClose">Spin again</button>
     <button class="btn-winner-remove" id="winnerRemove">Remove &amp; spin again</button>
   </div>
+</div>
+
+<!-- KEYBOARD HINT -->
+<div class="kbd-hint" id="kbdHint">Press <strong>F</strong> — presentation mode</div>
+
+<!-- QR OVERLAY (shown in presentation mode) -->
+<div class="qr-overlay" id="qrOverlay">
+  <div class="qr-frame">
+    <canvas id="qrCanvas" width="160" height="160"></canvas>
+  </div>
+  <div class="qr-label">scan to join</div>
+  <div class="qr-url" id="qrUrl"></div>
 </div>
 
 <script type="module">
@@ -343,14 +469,24 @@ async function initFirebase() {
   }
 }
 
-// ── JOIN LINK ─────────────────────────────────────────────────────────────
-// When running via the Node server, construct the LAN URL.
-// When opened directly as a file, show the Firebase join page URL.
+// ── JOIN LINK + QR CODE ───────────────────────────────────────────────────
 const isServed = location.protocol !== 'file:' && location.hostname !== '';
 const joinUrl  = isServed
   ? `${location.protocol}//${location.hostname}:${location.port}/join`
-  : `https://wheel-db5e9.firebaseapp.com/join`;  // fallback if opened as a file
+  : `https://wheel-db5e9.firebaseapp.com/join`;
+
 joinUrlEl.textContent = joinUrl;
+
+// Render QR code (library loaded synchronously via <script> tag above)
+new QRCode(document.getElementById('qrCode'), {
+  text:         joinUrl,
+  width:        200,
+  height:       200,
+  colorDark:    '#00ffcc',
+  colorLight:   '#10101a',
+  correctLevel: QRCode.CorrectLevel.M,
+});
+
 copyBtn.addEventListener('click', () => {
   navigator.clipboard.writeText(joinUrl).then(() => {
     copyBtn.textContent = 'Copied!';
