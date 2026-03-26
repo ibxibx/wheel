@@ -470,10 +470,15 @@ async function initFirebase() {
 }
 
 // ── JOIN LINK + QR CODE ───────────────────────────────────────────────────
-const isServed = location.protocol !== 'file:' && location.hostname !== '';
-const joinUrl  = isServed
-  ? `${location.protocol}//${location.hostname}:${location.port}/join`
-  : `https://wheel-db5e9.firebaseapp.com/join`;
+// Derive join URL that works on GitHub Pages, local Node server, and file://
+// GitHub Pages: https://ibxibx.github.io/wheel/join.html
+// Local server:  http://192.168.x.x:3000/join.html
+// File opened directly: fall back to the Firebase hosted URL
+const isFile   = location.protocol === 'file:';
+const basePath = location.pathname.replace(/\/[^/]*$/, ''); // strip filename
+const joinUrl  = isFile
+  ? 'https://ibxibx.github.io/wheel/join.html'
+  : `${location.origin}${basePath}/join.html`;
 
 joinUrlEl.textContent = joinUrl;
 
