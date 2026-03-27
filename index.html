@@ -285,15 +285,9 @@
 
 <script type="module">
 // ── FIREBASE CONFIG ───────────────────────────────────────────────────────
-const FIREBASE_CONFIG = {
-  apiKey:            "AIzaSyB5LE5DyEiJdWTURf1P-MaU_ACFF_djF_4",
-  authDomain:        "wheel-db5e9.firebaseapp.com",
-  databaseURL:       "https://wheel-db5e9-default-rtdb.europe-west1.firebasedatabase.app",
-  projectId:         "wheel-db5e9",
-  storageBucket:     "wheel-db5e9.firebasestorage.app",
-  messagingSenderId: "824688985151",
-  appId:             "1:824688985151:web:75e50071b46950a6bca48a"
-};
+// Loaded from firebase-config.js which is gitignored — never committed.
+// Copy firebase-config.example.js → firebase-config.js and fill in your values.
+import { FIREBASE_CONFIG } from './firebase-config.js';
 
 // ── COLOURS ───────────────────────────────────────────────────────────────
 const COLORS = ['#ff3cac','#00ffcc','#ffe600','#7b5ea7','#ff6b35','#00b4ff','#a8ff3e','#ff6bff','#ff9f43','#54a0ff','#5f27cd','#01abc3'];
