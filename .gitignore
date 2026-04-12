@@ -1,4 +1,3 @@
 node_modules/
 .env
 *.log
-firebase-config.js

@@ -685,7 +685,12 @@ function hideWinner() {
   winnerOverlay.classList.remove('active');
   winnerOverlay.style.opacity = '0';
   spinBtn.disabled = wheelNames.length === 0;
-  document.getElementById('winnerLine').style.width = '0';
+  // Reset line width without transition so next reveal animates cleanly
+  const line = document.getElementById('winnerLine');
+  line.style.transition = 'none';
+  line.style.width = '0';
+  // Re-enable the transition after one paint
+  requestAnimationFrame(() => { line.style.transition = ''; });
 }
 winnerClose.addEventListener('click', hideWinner);
 winnerRemove.addEventListener('click', async () => {

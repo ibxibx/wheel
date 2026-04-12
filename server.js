@@ -1,3 +1,11 @@
+// ── NOTE ───────────────────────────────────────────────────────────────────
+// This server.js is a legacy local-only version (SSE + in-memory state).
+// The production app (index.html + join.html) now uses Firebase Realtime
+// Database directly and does NOT need this server. You can run it for
+// purely local/offline testing, but sync won't work across devices without
+// Firebase. On GitHub Pages the HTML files load Firebase directly.
+// ──────────────────────────────────────────────────────────────────────────
+
 const express = require('express');
 const path    = require('path');
 const app     = express();
