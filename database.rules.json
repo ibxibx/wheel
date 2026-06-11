@@ -1,0 +1,26 @@
+{
+  "rules": {
+    "queue": {
+      ".read": true,
+      ".write": true,
+      "$id": {
+        "name": { ".validate": "newData.isString() && newData.val().length <= 40" },
+        "ts": { ".validate": "newData.isNumber()" },
+        "$other": { ".validate": false }
+      }
+    },
+    "wheel": {
+      ".read": true,
+      ".write": true,
+      "$id": {
+        "name": { ".validate": "newData.isString() && newData.val().length <= 40" },
+        "ts": { ".validate": "newData.isNumber()" },
+        "$other": { ".validate": false }
+      }
+    },
+    "$other": {
+      ".read": false,
+      ".write": false
+    }
+  }
+}
